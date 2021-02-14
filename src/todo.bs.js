@@ -4,6 +4,10 @@
 var Fs = require("fs");
 var Os = require("os");
 var Curry = require("bs-platform/lib/js/curry.js");
+var Belt_Int = require("bs-platform/lib/js/belt_Int.js");
+var Belt_Array = require("bs-platform/lib/js/belt_Array.js");
+var Caml_array = require("bs-platform/lib/js/caml_array.js");
+var Belt_Option = require("bs-platform/lib/js/belt_Option.js");
 
 var getToday = (function() {
   let date = new Date();
@@ -14,18 +18,216 @@ var getToday = (function() {
 
 var encoding = "utf8";
 
-console.log("Hello! today is " + Curry._1(getToday, undefined));
+function parser(cmd, arg) {
+  var cmd$1 = cmd.trim().toLocaleLowerCase();
+  var pos = Belt_Option.flatMap(arg, Belt_Int.fromString);
+  switch (cmd$1) {
+    case "add" :
+        return {
+                TAG: /* Add */0,
+                _0: arg
+              };
+    case "del" :
+        return {
+                TAG: /* Del */1,
+                _0: pos
+              };
+    case "done" :
+        return {
+                TAG: /* Done */2,
+                _0: pos
+              };
+    case "help" :
+        return /* Help */0;
+    case "ls" :
+        return /* Ls */1;
+    case "report" :
+        return /* Report */2;
+    default:
+      return /* Help */0;
+  }
+}
 
-if (Fs.existsSync("todo.txt")) {
-  console.log("Todo file exists.");
-} else {
-  Fs.writeFileSync("todo.txt", "This is todo!" + Os.EOL, {
+var todo_file = "todo.txt";
+
+var done_file = "done.txt";
+
+var help_text = "Usage :-\n$ ./todo add \"todo item\"  # Add a new todo\n$ ./todo ls               # Show remaining todos\n$ ./todo del NUMBER       # Delete a todo\n$ ./todo done NUMBER      # Complete a todo\n$ ./todo help             # Show usage\n$ ./todo report           # Statistics";
+
+function readFile(filename) {
+  if (!Fs.existsSync(filename)) {
+    return [];
+  }
+  var text = Fs.readFileSync(filename, {
+        encoding: encoding,
+        flag: "r"
+      });
+  var lines = text.split(Os.EOL);
+  return lines.filter(function (todo) {
+              return todo !== "";
+            });
+}
+
+function writeFile(filename, lines) {
+  if (lines.length === 1) {
+    var text = Caml_array.get(lines, 0) + Os.EOL;
+    Fs.writeFileSync(filename, text, {
+          encoding: encoding,
+          flag: "w"
+        });
+    return ;
+  }
+  var text$1 = Belt_Array.joinWith(lines, Os.EOL, (function (x) {
+          return x;
+        }));
+  Fs.writeFileSync(filename, text$1, {
         encoding: encoding,
         flag: "w"
       });
-  console.log("Todo file created.");
+  
+}
+
+function appendToFile(filename, text) {
+  Fs.appendFileSync(filename, text + Os.EOL, {
+        encoding: encoding,
+        flag: "a"
+      });
+  
+}
+
+function updateFile(filename, updaterFn) {
+  var contents = readFile(filename);
+  var new_contents = Curry._1(updaterFn, contents);
+  return writeFile(done_file, new_contents);
+}
+
+function cmdHelp(param) {
+  console.log(help_text);
+  
+}
+
+function cmdLs(param) {
+  var todos = readFile(todo_file);
+  if (todos.length === 0) {
+    console.log("There are no pending todos!");
+  } else {
+    console.log(Belt_Array.reduceWithIndex(Belt_Array.reverse(todos), "", (function (acc, todo, index) {
+                return acc + ("[" + String(todos.length - index | 0) + "] " + todo + Os.EOL);
+              })));
+  }
+  
+}
+
+function cmdAddTodo(text) {
+  if (text !== undefined) {
+    appendToFile(todo_file, text);
+    console.log("Added todo: \"" + text + "\"");
+  } else {
+    console.log("Error: Missing todo string. Nothing added!");
+  }
+  
+}
+
+function cmdDelTodo(arg) {
+  if (arg !== undefined) {
+    if (Fs.existsSync(todo_file)) {
+      return updateFile(todo_file, (function (todos) {
+                    if (arg < 1 || arg > todos.length) {
+                      console.log("Error: todo #" + String(arg) + " does not exist. Nothing deleted.");
+                      return todos;
+                    }
+                    var todos$1 = todos.filter(function (param, index) {
+                          return (index + 1 | 0) !== arg;
+                        });
+                    console.log("Deleted todo #" + String(arg));
+                    return todos$1;
+                  }));
+    } else {
+      return ;
+    }
+  } else {
+    console.log("Error: Missing NUMBER for deleting todo.");
+    return ;
+  }
+}
+
+function cmdMarkDone(arg) {
+  if (arg !== undefined) {
+    var todos = readFile(todo_file);
+    if (arg < 1 || arg > todos.length) {
+      console.log("Error: todo #" + String(arg) + " does not exist. Nothing Marked as done.");
+      return ;
+    }
+    var completedTodo = Caml_array.get(todos, arg - 1 | 0);
+    var todos$1 = todos.filter(function (param, index) {
+          return index !== (arg - 1 | 0);
+        });
+    writeFile(todo_file, todos$1);
+    appendToFile(done_file, "x " + Curry._1(getToday, undefined) + " " + completedTodo);
+    console.log("Marked todo #" + String(arg) + " as done.");
+    return ;
+  }
+  console.log("Error: Missing NUMBER for marking todo as done.");
+  
+}
+
+function cmdReport(param) {
+  var pending = readFile(todo_file).length;
+  var completed = readFile(done_file).length;
+  console.log(Curry._1(getToday, undefined) + " Pending : " + String(pending) + " Completed : " + String(completed));
+  
+}
+
+var cmd = Belt_Option.getWithDefault(Belt_Array.get(process.argv, 2), "help");
+
+var cmdArg = Belt_Array.get(process.argv, 3);
+
+var cmd$1 = parser(cmd, cmdArg);
+
+if (typeof cmd$1 === "number") {
+  switch (cmd$1) {
+    case /* Help */0 :
+        console.log(help_text);
+        break;
+    case /* Ls */1 :
+        cmdLs(undefined);
+        break;
+    case /* Report */2 :
+        cmdReport(undefined);
+        break;
+    
+  }
+} else {
+  switch (cmd$1.TAG | 0) {
+    case /* Add */0 :
+        cmdAddTodo(cmd$1._0);
+        break;
+    case /* Del */1 :
+        cmdDelTodo(cmd$1._0);
+        break;
+    case /* Done */2 :
+        cmdMarkDone(cmd$1._0);
+        break;
+    
+  }
 }
 
 exports.getToday = getToday;
 exports.encoding = encoding;
-/*  Not a pure module */
+exports.parser = parser;
+exports.todo_file = todo_file;
+exports.done_file = done_file;
+exports.help_text = help_text;
+exports.readFile = readFile;
+exports.writeFile = writeFile;
+exports.appendToFile = appendToFile;
+exports.updateFile = updateFile;
+exports.cmdHelp = cmdHelp;
+exports.cmdLs = cmdLs;
+exports.cmdAddTodo = cmdAddTodo;
+exports.cmdDelTodo = cmdDelTodo;
+exports.cmdMarkDone = cmdMarkDone;
+exports.cmdReport = cmdReport;
+exports.cmdArg = cmdArg;
+exports.cmd = cmd$1;
+/* cmd Not a pure module */
